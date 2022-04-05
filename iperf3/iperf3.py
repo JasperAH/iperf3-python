@@ -22,6 +22,7 @@ from ctypes import util, cdll, c_char_p, c_int, c_char, c_void_p, c_uint64
 import os
 import select
 import json
+from termios import CINTR
 import threading
 from socket import SOCK_DGRAM, SOCK_STREAM
 
@@ -136,6 +137,14 @@ class IPerf3(object):
         self.lib.iperf_get_test_json_output.argtypes = (c_void_p,)
         self.lib.iperf_set_test_json_output.restype = None
         self.lib.iperf_set_test_json_output.argtypes = (c_void_p, c_int,)
+
+        self.lib.iperf_set_test_bidirectional.restype = None
+        self.lib.iperf_set_test_bidirectional.argtypes = (c_void_p, c_int,) # set to 1 to enable --bidir
+        self.lib.iperf_set_test_pacing_timer.restype = None
+        self.lib.iperf_set_test_pacing_timer.argtypes = (c_void_p, c_int,)
+        self.lib.iperf_get_test_pacing_timer.restype = c_int
+        self.lib.iperf_get_test_pacing_timer.argtypes = (c_void_p,)
+
         self.lib.iperf_get_verbose.restype = c_int
         self.lib.iperf_get_verbose.argtypes = (c_void_p,)
         self.lib.iperf_set_verbose.restype = None
@@ -207,6 +216,9 @@ class IPerf3(object):
         self.role = role
         self.json_output = True
         self.verbose = verbose
+
+        # setting this to default value as API does not have getter
+        self.bidirectional = False
 
     def __del__(self):
         """Cleanup the test after the :class:`IPerf3` class is terminated"""
@@ -333,6 +345,45 @@ class IPerf3(object):
             self.lib.iperf_set_test_json_output(self._test, 0)
 
         self._json_output = enabled
+
+    @property
+    def bidirectional(self):
+        """Toggles bidirectional traffic of iperf.
+
+        Turning this on will cause both the client and
+        server to send and receive traffic.
+
+        :rtype: bool
+        """
+        return self._bidirectional
+    
+    @bidirectional.setter
+    def bidirectional(self,enabled):
+        if enabled:
+            self.lib.iperf_set_test_bidirectional(self._test,1)
+        else:
+            self.lib.iperf_set_test_bidirectional(self._test,0)
+
+        self._bidirectional = enabled
+
+    @property
+    def pacing_timer(self):
+        """Set the timing for pacing, in microseconds (default 1000).
+
+        This timer controls the interval at which iperf checks
+        the amount of sent data against the target bitrate.
+        A larger value results in burstier traffic at larger intervals.
+
+        :rtype: int
+        """
+        ptimer = self.lib.get_test_pacing_timer(self._test)
+        return ptimer
+
+    @pacing_timer.setter
+    def pacing_timer(self,timer):
+        self.lib.iperf_set_test_pacing_timer(self._test,timer)
+
+        self._pacing_timer = timer
 
     @property
     def verbose(self):
@@ -882,3 +933,4 @@ class TestResult(object):
     def __repr__(self):
         """Print the result as received from iperf3"""
         return self.text
+
